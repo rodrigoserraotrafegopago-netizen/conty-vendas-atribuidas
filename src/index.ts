@@ -3,10 +3,13 @@ import { createApp } from "./app.ts";
 import { openDatabase } from "./db.ts";
 import { seedCreators } from "./seed.ts";
 
-const db = openDatabase(process.env.DB_PATH ?? "data/vendas.sqlite");
+const db = openDatabase(process.env.DB_PATH || "data/vendas.sqlite");
 seedCreators(db);
-const port = Number(process.env.PORT ?? 3005);
+const port = Number(process.env.PORT || 3005);
 
-serve({ fetch: createApp({ db, webhookSecret: process.env.SHOPIFY_WEBHOOK_SECRET }).fetch, port }, (info) => {
-  console.log(`vendas atribuídas em http://127.0.0.1:${info.port}`);
+const webhookSecret = process.env.SHOPIFY_WEBHOOK_SECRET || undefined;
+
+serve({ fetch: createApp({ db, webhookSecret }).fetch, port }, (info) => {
+  const signature = webhookSecret ? "webhooks exigem assinatura" : "webhooks sem verificação de assinatura";
+  console.log(`vendas atribuídas em http://127.0.0.1:${info.port} (${signature})`);
 });
