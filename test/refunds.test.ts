@@ -99,6 +99,37 @@ describe("estorno", () => {
     });
   });
 
+  it("que chega antes do pedido pode ser consultado em GET /refunds/:id antes e depois do pedido", async () => {
+    const t = setup();
+    await t.post("/webhooks/refunds", refundPayload("r-early", "5001", "30.00"));
+
+    const before = await t.get("/refunds/r-early");
+    expect(before.status).toBe(200);
+    expect(await before.json()).toMatchObject({
+      id: "r-early",
+      order_id: "5001",
+      status: "pending_order",
+      requested_cents: 3000,
+      applied_cents: null,
+      applied_at: null,
+      order_received: false,
+      deliveries: [{ topic: "refunds", external_id: "r-early", result: "pending_order" }],
+    });
+
+    t.advance(60_000);
+    await t.post("/webhooks/orders", orderPayload());
+    expect(await (await t.get("/refunds/r-early")).json()).toMatchObject({
+      status: "applied",
+      applied_cents: 3000,
+      applied_at: "2026-03-12T21:06:00.000Z",
+      order_received: true,
+    });
+
+    const missing = await t.get("/refunds/nao-existe");
+    expect(missing.status).toBe(404);
+    expect(await missing.json()).toMatchObject({ error: "estorno_nao_encontrado" });
+  });
+
   it("vários que chegam antes do pedido são aplicados na ordem de chegada, com o limite", async () => {
     const t = setup();
     await t.post("/webhooks/refunds", refundPayload("r-a", "5001", "30.00"));

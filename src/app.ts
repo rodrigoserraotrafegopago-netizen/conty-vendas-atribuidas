@@ -59,6 +59,7 @@ export function createApp({
   });
 
   app.get("/orders/:id", (c) => c.json(sales.getOrder(c.req.param("id"))));
+  app.get("/refunds/:id", (c) => c.json(sales.getRefund(c.req.param("id"))));
 
   app.post("/creators", async (c) => c.json(sales.createCreator(await readJson(c)), 201));
   app.get("/creators/:id/sales", (c) => c.json(sales.creatorSales(c.req.param("id"))));

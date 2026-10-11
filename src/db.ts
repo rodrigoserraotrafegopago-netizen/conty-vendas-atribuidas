@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS webhook_deliveries (
   summary TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS deliveries_by_order ON webhook_deliveries (order_id, seq);
+CREATE INDEX IF NOT EXISTS deliveries_by_external_id ON webhook_deliveries (topic, external_id, seq);
 
 -- A aplicação já limita os estornos ao saldo; os triggers garantem isso no banco também.
 CREATE TRIGGER IF NOT EXISTS refunds_never_exceed_total_on_insert
@@ -100,7 +101,8 @@ END;
 export function openDatabase(path: string): DatabaseSync {
   if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
   const db = new DatabaseSync(path);
-  db.exec("PRAGMA foreign_keys = ON;");
+  // Outra conexão no mesmo arquivo espera a vez (até 5 s) em vez de falhar na hora com "database is locked".
+  db.exec("PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
   db.exec(SCHEMA);
   return db;
 }

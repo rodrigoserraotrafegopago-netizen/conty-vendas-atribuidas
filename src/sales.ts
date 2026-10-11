@@ -46,6 +46,20 @@ type DeliveryRow = {
 
 export type OrderView = ReturnType<ReturnType<typeof createSalesService>["getOrder"]>;
 
+function refundView(row: RefundRow) {
+  return {
+    id: row.id,
+    order_id: row.order_id,
+    requested_cents: row.requested_cents,
+    applied_cents: row.applied_cents,
+    status: row.status,
+    reason: row.reason,
+    refund_created_at: row.refund_created_at,
+    received_at: row.received_at,
+    applied_at: row.applied_at,
+  };
+}
+
 // Pedido que chega de novo só avança de "aguardando pagamento" para pago ou cancelado.
 // Qualquer outra mudança de status num reenvio (inclusive status desconhecido) é ignorada,
 // e a entrega fica registrada.
@@ -162,23 +176,28 @@ export function createSalesService({ db, clock }: { db: DatabaseSync; clock: Clo
         attributed_net_cents: order.creator_id ? netCents : 0,
         touches: attribution.touches,
       },
-      refunds: refunds.map((r) => ({
-        id: r.id,
-        requested_cents: r.requested_cents,
-        applied_cents: r.applied_cents,
-        status: r.status,
-        reason: r.reason,
-        received_at: r.received_at,
-        applied_at: r.applied_at,
-      })),
+      refunds: refunds.map(refundView),
       deliveries,
       received_at: order.received_at,
       updated_at: order.updated_at,
     };
   }
 
+  // O estorno pode chegar antes do pedido; aqui ele aparece mesmo enquanto GET /orders/:id ainda dá 404.
+  function getRefund(id: string) {
+    const row = db.prepare("SELECT * FROM refunds WHERE id = ?").get(id) as RefundRow | undefined;
+    if (!row) throw new DomainError("estorno_nao_encontrado", "Estorno não encontrado.", 404);
+    const deliveries = db
+      .prepare(
+        "SELECT seq, topic, external_id, delivery_id, result, received_at FROM webhook_deliveries WHERE topic = 'refunds' AND external_id = ? ORDER BY seq",
+      )
+      .all(id) as DeliveryRow[];
+    return { ...refundView(row), order_received: orderRow(row.order_id) !== undefined, deliveries };
+  }
+
   return {
     getOrder,
+    getRefund,
 
     createCreator(input: unknown) {
       const body = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
@@ -338,14 +357,7 @@ export function createSalesService({ db, clock }: { db: DatabaseSync; clock: Clo
       const refund = db.prepare("SELECT * FROM refunds WHERE id = ?").get(input.id) as RefundRow;
       return {
         result,
-        refund: {
-          id: refund.id,
-          order_id: refund.order_id,
-          requested_cents: refund.requested_cents,
-          applied_cents: refund.applied_cents,
-          status: refund.status,
-          reason: refund.reason,
-        },
+        refund: refundView(refund),
         order: orderRow(input.orderId) ? getOrder(input.orderId) : null,
       };
     },
